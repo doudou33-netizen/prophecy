@@ -17,7 +17,6 @@
       overflow: hidden;
     }
 
-    /* 待機画面 */
     #waiting {
       display: flex;
       flex-direction: column;
@@ -40,7 +39,6 @@
       letter-spacing: 2px;
     }
 
-    /* 結果画面 */
     #result {
       display: none;
       flex-direction: column;
@@ -79,15 +77,11 @@
       animation: reveal 1s ease-out;
     }
 
-    #reset-btn {
+    .shake-hint {
       margin-top: 40px;
-      padding: 12px 32px;
-      background: transparent;
-      border: 1px solid #c9a84c;
-      color: #c9a84c;
-      font-size: 14px;
-      letter-spacing: 4px;
-      border-radius: 30px;
+      color: #333;
+      font-size: 12px;
+      letter-spacing: 3px;
       animation: reveal 1.2s ease-out;
     }
 
@@ -109,16 +103,17 @@
     <div class="suit" id="suitSymbol"></div>
     <div class="suit-name" id="suitName"></div>
     <div class="gold-line"></div>
-    <button id="reset-btn" onclick="reset()">もう一度</button>
+    <p class="shake-hint">シェイクでリセット</p>
   </div>
 
   <script>
-    const suits = [
-      { symbol: '♠', name: 'スペード', color: 'black' },
-      { symbol: '♥', name: 'ハート',   color: 'red'   },
-      { symbol: '♦', name: 'ダイヤ',   color: 'red'   },
-      { symbol: '♣', name: 'クラブ',   color: 'black' },
-    ];
+    // 上:ダイヤ 下:ハート 左:スペード 右:クラブ
+    const suits = {
+      up:    { symbol: '♦', name: 'ダイヤ',   color: 'red'   },
+      down:  { symbol: '♥', name: 'ハート',   color: 'red'   },
+      left:  { symbol: '♠', name: 'スペード', color: 'black' },
+      right: { symbol: '♣', name: 'クラブ',   color: 'black' },
+    };
 
     let revealed = false;
     let faceDown = false;
@@ -143,13 +138,13 @@
       document.getElementById('result').style.display = 'none';
     }
 
+    // 傾き検知
     window.addEventListener('deviceorientation', function(e) {
       if (revealed) return;
 
-      const beta  = e.beta;  // 前後の傾き（-180〜180）
-      const gamma = e.gamma; // 左右の傾き（-90〜90）
+      const beta  = e.beta;
+      const gamma = e.gamma;
 
-      // 裏向き検知（beta が -90 付近 または 180付近）
       const isDown = Math.abs(beta) > 150 || beta < -150;
 
       if (isDown) {
@@ -159,21 +154,44 @@
 
       if (!faceDown) return;
 
-      // 表向きに戻した際の傾き方向で判定（敏感モード：15度以上）
       const threshold = 15;
 
       if (beta > threshold && Math.abs(gamma) < 45) {
-        showResult(suits[0]); // 上に傾ける → ♠
+        showResult(suits.up);
       } else if (beta < -threshold && Math.abs(gamma) < 45) {
-        showResult(suits[1]); // 下に傾ける → ♥
+        showResult(suits.down);
       } else if (gamma < -threshold && Math.abs(beta) < 45) {
-        showResult(suits[2]); // 左に傾ける → ♦
+        showResult(suits.left);
       } else if (gamma > threshold && Math.abs(beta) < 45) {
-        showResult(suits[3]); // 右に傾ける → ♣
+        showResult(suits.right);
       }
     });
 
-    // iOS の許可リクエスト
+    // シェイク検知
+    let lastX, lastY, lastZ;
+    let lastShake = 0;
+
+    window.addEventListener('devicemotion', function(e) {
+      if (!revealed) return;
+
+      const acc = e.accelerationIncludingGravity;
+      if (!acc) return;
+
+      const x = acc.x, y = acc.y, z = acc.z;
+
+      if (lastX !== undefined) {
+        const diff = Math.abs(x - lastX) + Math.abs(y - lastY) + Math.abs(z - lastZ);
+        const now = Date.now();
+        if (diff > 25 && now - lastShake > 1000) {
+          lastShake = now;
+          reset();
+        }
+      }
+
+      lastX = x; lastY = y; lastZ = z;
+    });
+
+    // iOS許可リクエスト
     window.addEventListener('load', function() {
       if (typeof DeviceOrientationEvent !== 'undefined' &&
           typeof DeviceOrientationEvent.requestPermission === 'function') {
@@ -186,8 +204,11 @@
     });
 
     function requestPermission() {
-      DeviceOrientationEvent.requestPermission().then(state => {
-        if (state === 'granted') {
+      Promise.all([
+        DeviceOrientationEvent.requestPermission(),
+        DeviceMotionEvent.requestPermission()
+      ]).then(([orientation, motion]) => {
+        if (orientation === 'granted' && motion === 'granted') {
           document.getElementById('waiting').innerHTML = `
             <h1>予　言</h1>
             <p style="color:#555; font-size:14px; letter-spacing:2px;">iPhoneを裏向きにしてください</p>
